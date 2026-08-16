@@ -272,15 +272,22 @@ def first_block_mail(courses: list | None = None) -> str:
 
 
 def maybe_hourly_drop_reminder(courses: list[dict]) -> None:
+    """Hourly DROP mail only if a first-section elective is already registered.
+
+    Core/4-course loads must not trigger this — only a held elective that can
+    block registering another watched elective.
+    """
     global HOLD_SEEN_AT, LAST_HOLD_MAIL
-    enrolled = [c for c in courses if c.get("registered")]
+    holding = [
+        c for c in courses if c.get("registered") and is_safe_elective(c)
+    ]
     by_short = {c["short"]: c for c in courses if c.get("short")}
     waiting = []
     for short in WATCH:
         c = by_short.get(short)
         if not c or not c.get("registered"):
             waiting.append(short)
-    if not enrolled or not waiting:
+    if not holding or not waiting:
         HOLD_SEEN_AT = 0.0
         LAST_HOLD_MAIL = 0.0
         return
@@ -293,7 +300,7 @@ def maybe_hourly_drop_reminder(courses: list[dict]) -> None:
     if not LAST_HOLD_MAIL and now - HOLD_SEEN_AT < HOLD_MAIL_EVERY:
         return
     LAST_HOLD_MAIL = now
-    enrolled_lines = "\n".join(f"  - {course_label(c)}" for c in enrolled)
+    holding_lines = "\n".join(f"  - {course_label(c)}" for c in holding)
     wait_lines = "\n".join(
         f"  - {course_label(by_short[s]) if s in by_short else s}" for s in waiting
     )
@@ -302,7 +309,7 @@ def maybe_hourly_drop_reminder(courses: list[dict]) -> None:
     alert(
         "DROP to enroll",
         "An elective is already enrolled; Flex may block another register.\n\n"
-        f"Already enrolled:\n{enrolled_lines}\n\nStill waiting:\n{wait_lines}\n\n"
+        f"Holding elective(s):\n{holding_lines}\n\nStill waiting:\n{wait_lines}\n\n"
         f"{run_snapshot()}\n\n{first_block_mail(courses)}",
         blocking=True,
     )
@@ -859,7 +866,8 @@ def main() -> None:
     ap.add_argument("--section", default="BCS-7A")
     ap.add_argument("-p", "--poll", dest="poll", type=float, default=DEFAULT_POLL)
     ap.add_argument("-m", "--mail", default="")
-    args = ap.parse_args()
+    # allow: ... --cookie file --new dl -p 3  (dl after flags)
+    args = ap.parse_intermixed_args()
     ROLL = args.roll.strip()
     WANT_NEW = bool(args.new)
     COOKIE_ARG = (args.cookie or "").strip()
