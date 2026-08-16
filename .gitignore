@@ -1,0 +1,16 @@
+# secrets
+config.py
+.env
+.env.*
+
+# Flex session cookies
+cookie*.txt
+!cookie.example
+
+# logs
+flex_server.log
+*.log
+
+# Python
+__pycache__/
+*.pyc

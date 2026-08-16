@@ -1,0 +1,4 @@
+# Put the ASP.NET_SessionId value on one line (no "ASP.NET_SessionId=" prefix).
+# Copy from Chrome DevTools → Application → Cookies → flexstudent.nu.edu.pk
+# Then:
+#   python3 flex_server.py 23L-0700 --cookie cookie.txt --new dl -p 3
