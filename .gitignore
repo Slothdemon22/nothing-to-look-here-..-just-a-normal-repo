@@ -7,6 +7,9 @@ config.py
 cookie*.txt
 !cookie.example
 
+# local research notes (may name accounts / probe details)
+FINDINGS.md
+
 # logs
 flex_server.log
 *.log
