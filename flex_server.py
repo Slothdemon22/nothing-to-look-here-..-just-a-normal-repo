@@ -57,8 +57,11 @@ LAST_ERROR_MAIL = {}
 HOLD_SEEN_AT = 0.0
 LAST_HOLD_MAIL = 0.0
 HOLD_MAIL_EVERY = 3600.0
-SESSION_WAIT_SLEEP = 20.0
+SESSION_WAIT_SLEEP = 5.0
+SESSION_WAIT_MAIL_COOLDOWN = 120.0  # min seconds between SESSION waiting mails
+SESSION_RESTORE_MAIL_AFTER = 15.0  # only mail restored if wait lasted at least this long
 LAST_SESSION_WAIT_MAIL = 0.0
+SESSION_IN_WAIT = False
 STARTED_AT = 0.0
 LAST_HEALTH_MAIL = 0.0
 LAST_COURSES = []
@@ -193,28 +196,33 @@ def wait_for_session(why: str) -> None:
     ASP.NET sessions are server-side: the SessionId string often stays the same.
     Logging in on Flex (browser) can revive that id; we also re-read the cookie
     file each loop so a pasted new id works without restarting.
+
+    Mails SESSION waiting when entering wait (cooldown), and SESSION restored
+    when the cookie works again after a real wait.
     """
-    global LAST_SESSION_WAIT_MAIL, LAST_POLL_STATUS
+    global LAST_SESSION_WAIT_MAIL, LAST_POLL_STATUS, SESSION_IN_WAIT
     LAST_POLL_STATUS = f"session wait: {why}"
     log(f"SESSION waiting — {why}")
-    now = time.time()
-    if now - LAST_SESSION_WAIT_MAIL >= HOLD_MAIL_EVERY:
-        LAST_SESSION_WAIT_MAIL = now
-        try:
-            alert(
-                "SESSION waiting",
-                "Registration bounced to /Login. Script is still running — will resume "
-                "when Flex accepts this cookie again.\n\n"
-                "1) Log in on Flex in your browser (same SessionId often revives), OR\n"
-                "2) Paste a fresh ASP.NET_SessionId into the cookie file (no restart).\n\n"
-                f"Reason: {why}\n"
-                f"Cookie file: {cookie_path().name}\n"
-                f"Current id: {(SID or '')[:12]}…\n\n"
-                f"{run_snapshot()}\n\n{first_block_mail()}",
-                blocking=True,
-            )
-        except Exception:
-            pass
+    entered_at = time.time()
+    if not SESSION_IN_WAIT:
+        SESSION_IN_WAIT = True
+        if entered_at - LAST_SESSION_WAIT_MAIL >= SESSION_WAIT_MAIL_COOLDOWN:
+            LAST_SESSION_WAIT_MAIL = entered_at
+            try:
+                alert(
+                    "SESSION waiting",
+                    "Registration bounced to /Login. Script is still running — will resume "
+                    "when Flex accepts this cookie again.\n\n"
+                    "1) Log in on Flex in your browser (same SessionId often revives), OR\n"
+                    "2) Paste a fresh ASP.NET_SessionId into the cookie file (no restart).\n\n"
+                    f"Reason: {why}\n"
+                    f"Cookie file: {cookie_path().name}\n"
+                    f"Current id: {(SID or '')[:12]}…\n\n"
+                    f"{run_snapshot()}\n\n{first_block_mail()}",
+                    blocking=True,
+                )
+            except Exception as e:
+                log(f"MAIL fail SESSION waiting: {e}")
     n = 0
     while True:
         time.sleep(SESSION_WAIT_SLEEP)
@@ -225,18 +233,27 @@ def wait_for_session(why: str) -> None:
                 log(f"SESSION waiting #{n} — no cookie yet ({cookie_path().name})")
             continue
         if reg_page_ok(SID):
+            waited = time.time() - entered_at
             log(f"SESSION restored after {n} wait(s) — {SID[:12]}…")
             LAST_POLL_STATUS = "session restored"
-            try:
-                alert(
-                    "SESSION restored",
-                    "Cookie works again; sniper resumed polling.\n\n"
-                    f"Cookie: {SID[:12]}…  file={cookie_path().name}\n\n"
-                    f"{run_snapshot()}\n\n{first_block_mail()}",
-                    blocking=True,
+            SESSION_IN_WAIT = False
+            if waited >= SESSION_RESTORE_MAIL_AFTER:
+                try:
+                    alert(
+                        "SESSION restored",
+                        "Cookie works again; sniper resumed polling.\n\n"
+                        f"Cookie: {SID[:12]}…  file={cookie_path().name}\n"
+                        f"Waited: {int(waited)}s\n\n"
+                        f"{run_snapshot()}\n\n{first_block_mail()}",
+                        blocking=True,
+                    )
+                except Exception as e:
+                    log(f"MAIL fail SESSION restored: {e}")
+            else:
+                log(
+                    f"SESSION restored mail skipped (waited only {int(waited)}s; "
+                    f"flap guard < {int(SESSION_RESTORE_MAIL_AFTER)}s)"
                 )
-            except Exception:
-                pass
             return
         if n == 1 or n % 3 == 0:
             log(
