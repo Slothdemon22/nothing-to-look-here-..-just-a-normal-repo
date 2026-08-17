@@ -4,7 +4,9 @@ Cookie-only Flex sniper for a VPS / SSH box. No Chrome, no captcha, no password.
 
   python3 flex_server.py 23L-0700 --cookie cookie.txt --new dl -p 3
 
-If the session dies it mails SESSION expired and exits. Paste a new cookie and start again.
+If Flex bounces to /Login the script waits (does not exit). Log in on Flex in a
+browser — same ASP.NET_SessionId is often enough; or update the cookie file.
+When registration loads again it mails SESSION restored and continues.
 """
 
 from __future__ import annotations
@@ -39,7 +41,6 @@ UA = (
     "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
 )
 LOG_FILE = ROOT / "flex_server.log"
-EXIT_SESSION = 2
 
 ROLL = ""
 WATCH = []
@@ -56,6 +57,8 @@ LAST_ERROR_MAIL = {}
 HOLD_SEEN_AT = 0.0
 LAST_HOLD_MAIL = 0.0
 HOLD_MAIL_EVERY = 3600.0
+SESSION_WAIT_SLEEP = 20.0
+LAST_SESSION_WAIT_MAIL = 0.0
 STARTED_AT = 0.0
 LAST_HEALTH_MAIL = 0.0
 LAST_COURSES = []
@@ -162,21 +165,84 @@ def alert_error_once(key: str, title: str, details: str, cooldown: float = 90.0)
     alert(title, details)
 
 
-def die_session(why: str) -> None:
-    log(f"SESSION expired — {why}")
+def refresh_sid() -> str:
+    """Reload cookie from file/arg; keep previous SID if file briefly empty."""
+    global SID
+    new = load_cookie()
+    if new:
+        SID = new.strip()
+    return SID
+
+
+def reg_page_ok(sid: str) -> bool:
+    if not sid:
+        return False
     try:
-        alert(
-            "SESSION expired",
-            "Cookie is dead. This server script does NOT log in.\n"
-            "SSH in, put a fresh ASP.NET_SessionId in the cookie file, start again.\n\n"
-            f"Reason: {why}\n\n"
-            f"{run_snapshot()}\n\n"
-            f"{first_block_mail()}",
-            blocking=True,
-        )
+        url, page = get_reg_page(sid)
     except Exception:
-        pass
-    sys.exit(EXIT_SESSION)
+        return False
+    if not looks_logged_in(page, url):
+        return False
+    scrape_profile(page)
+    return True
+
+
+def wait_for_session(why: str) -> None:
+    """Do not exit. Wait until Flex accepts the cookie for CourseRegistration again.
+
+    ASP.NET sessions are server-side: the SessionId string often stays the same.
+    Logging in on Flex (browser) can revive that id; we also re-read the cookie
+    file each loop so a pasted new id works without restarting.
+    """
+    global LAST_SESSION_WAIT_MAIL, LAST_POLL_STATUS
+    LAST_POLL_STATUS = f"session wait: {why}"
+    log(f"SESSION waiting — {why}")
+    now = time.time()
+    if now - LAST_SESSION_WAIT_MAIL >= HOLD_MAIL_EVERY:
+        LAST_SESSION_WAIT_MAIL = now
+        try:
+            alert(
+                "SESSION waiting",
+                "Registration bounced to /Login. Script is still running — will resume "
+                "when Flex accepts this cookie again.\n\n"
+                "1) Log in on Flex in your browser (same SessionId often revives), OR\n"
+                "2) Paste a fresh ASP.NET_SessionId into the cookie file (no restart).\n\n"
+                f"Reason: {why}\n"
+                f"Cookie file: {cookie_path().name}\n"
+                f"Current id: {(SID or '')[:12]}…\n\n"
+                f"{run_snapshot()}\n\n{first_block_mail()}",
+                blocking=True,
+            )
+        except Exception:
+            pass
+    n = 0
+    while True:
+        time.sleep(SESSION_WAIT_SLEEP)
+        n += 1
+        refresh_sid()
+        if not SID:
+            if n == 1 or n % 3 == 0:
+                log(f"SESSION waiting #{n} — no cookie yet ({cookie_path().name})")
+            continue
+        if reg_page_ok(SID):
+            log(f"SESSION restored after {n} wait(s) — {SID[:12]}…")
+            LAST_POLL_STATUS = "session restored"
+            try:
+                alert(
+                    "SESSION restored",
+                    "Cookie works again; sniper resumed polling.\n\n"
+                    f"Cookie: {SID[:12]}…  file={cookie_path().name}\n\n"
+                    f"{run_snapshot()}\n\n{first_block_mail()}",
+                    blocking=True,
+                )
+            except Exception:
+                pass
+            return
+        if n == 1 or n % 3 == 0:
+            log(
+                f"SESSION waiting #{n} — login on Flex or update "
+                f"{cookie_path().name} (id={SID[:12]}…)"
+            )
 
 
 def scrape_profile(html: str) -> None:
@@ -691,11 +757,11 @@ def run() -> None:
     global POLL_N, REG_ATTEMPT_N, STARTED_AT, LAST_COURSES, LAST_POLL_STATUS, SID
     STARTED_AT = time.time()
     LAST_POLL_STATUS = "starting"
-    SID = load_cookie()
-    if not SID:
-        die_session("no cookie — pass --cookie file or put cookie_<roll>.txt here")
-    if not session_alive(SID):
-        die_session("cookie not valid for this roll (Flex bounced or wrong account)")
+    refresh_sid()
+    if not SID or not reg_page_ok(SID):
+        wait_for_session(
+            "no cookie or not logged in — pass --cookie / cookie file, or log in on Flex"
+        )
     log(f"COOKIE ok {SID[:12]}…  file={cookie_path().name}")
     watch_msg = ",".join(WATCH) if WATCH else "(no extra shorts)"
     prio = "  +NEW first" if WANT_NEW else ""
@@ -704,7 +770,8 @@ def run() -> None:
     alert(
         "STARTED",
         "Cookie-only sniper started on this server.\n"
-        "No Chrome. If the cookie dies you get SESSION expired mail and this process stops.\n\n"
+        "No Chrome. If Flex logs you out the script waits (does not exit) until "
+        "you log in again or update the cookie file.\n\n"
         f"Cookie: {SID[:12]}…  file={cookie_path().name}\n\n"
         f"{run_snapshot()}",
         blocking=True,
@@ -729,7 +796,8 @@ def run() -> None:
             time.sleep(INTERVAL)
             continue
         if not looks_logged_in(page, url):
-            die_session("registration page bounced to /Login")
+            wait_for_session("registration page bounced to /Login")
+            continue
 
         if re.search(r"Offering not complete", page, re.I):
             LAST_POLL_STATUS = "offering not complete"
@@ -820,7 +888,8 @@ def run() -> None:
                 )
                 ok, logged_out = post_register(SID, dump, token, sec or SECTION)
                 if logged_out:
-                    die_session("register POST bounced to /Login")
+                    wait_for_session("register POST bounced to /Login")
+                    break
                 if ok:
                     SEEN_REGISTERED.add(key)
                     log(f"REGISTER ok #{REG_ATTEMPT_N} {c['short']} {c['name']}")
