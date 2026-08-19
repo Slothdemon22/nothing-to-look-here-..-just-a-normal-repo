@@ -76,6 +76,7 @@ SID = ""
 DEFAULT_WATCH = ["dl", "ds", "se", "bi"]
 DEFAULT_MAIL = "l230625@lhr.nu.edu.pk"
 DEFAULT_POLL = 4.0
+MIN_POLL = 0.2
 KNOWN_ELECTIVE_CODES = {
     "CS4112",  # Deep Learning
     "CS4118",  # Software Evolution and Engineering
@@ -951,7 +952,14 @@ def main() -> None:
     ap.add_argument("--cookie", default="", help="cookie file or raw ASP.NET_SessionId")
     ap.add_argument("--new", action="store_true", help="watch unknown first-section electives first")
     ap.add_argument("--section", default="BCS-7A")
-    ap.add_argument("-p", "--poll", dest="poll", type=float, default=DEFAULT_POLL)
+    ap.add_argument(
+        "-p",
+        "--poll",
+        dest="poll",
+        type=float,
+        default=DEFAULT_POLL,
+        help=f"poll seconds (default {DEFAULT_POLL:g}, min {MIN_POLL:g})",
+    )
     ap.add_argument("-m", "--mail", default="")
     # allow: ... --cookie file --new dl -p 3  (dl after flags)
     args = ap.parse_intermixed_args()
@@ -966,7 +974,7 @@ def main() -> None:
         WATCH_EXPLICIT = typed or list(DEFAULT_WATCH)
         WATCH = list(WATCH_EXPLICIT)
     SECTION = args.section
-    INTERVAL = max(1.0, args.poll)
+    INTERVAL = max(MIN_POLL, args.poll)
     MAIL_TO = args.mail.strip() or (getattr(_cfg, "MAIL_TO", "") if _cfg else "") or DEFAULT_MAIL
     try:
         run()

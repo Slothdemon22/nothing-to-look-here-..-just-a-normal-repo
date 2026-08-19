@@ -34,7 +34,7 @@ Save as `server/cookie.txt` (or `cookie_23L0700.txt`). If Flex dumps you to `/Lo
 | shorts | with `--new`: only what you type | `dl` `ds` `se` `bi` `wp` |
 | `--cookie` | `cookie_<roll>.txt` | file path or raw session id |
 | `--new` | off | unknown first-section electives first, then your shorts |
-| `-p` | `4` | poll seconds |
+| `-p` | `4` | poll seconds (min `0.2`) |
 | `--section` | `BCS-7A` | preferred section if open |
 | `-m` | from `config.py` | alert inbox |
 
