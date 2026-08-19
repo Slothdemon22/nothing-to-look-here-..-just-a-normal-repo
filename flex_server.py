@@ -77,12 +77,13 @@ DEFAULT_WATCH = ["dl", "ds", "se", "bi"]
 DEFAULT_MAIL = "l230625@lhr.nu.edu.pk"
 DEFAULT_POLL = 4.0
 KNOWN_ELECTIVE_CODES = {
-    "CS4112",
-    "CS4118",
-    "CS4032",
-    "CS4048",
-    "CS4063",
-    "CS4085",
+    "CS4112",  # Deep Learning
+    "CS4118",  # Software Evolution and Engineering
+    "CS4032",  # Web Programming
+    "CS4048",  # Data Science
+    "CS4054",  # Bioinformatics — watch with `bi`, not --new
+    "CS4063",  # Natural Language Processing
+    "CS4085",  # MLOps
 }
 
 
@@ -428,7 +429,7 @@ def maybe_hourly_health() -> None:
     looking = "\n".join(lines) if lines else "  - " + ", ".join(WATCH)
     extra_new = ""
     if WANT_NEW and not NEW_SHORTS:
-        extra_new = "\nStill waiting for a NEW first-section elective (not DL/DS/SE/WP).\n"
+        extra_new = "\nStill waiting for a NEW first-section elective (not DL/DS/SE/WP/BI).\n"
     log(f"HEALTH {'start' if first else str(hours)+'h'} — {','.join(WATCH) or 'NEW'}")
     alert(
         "STARTED health" if first else "HEALTH running",
@@ -628,7 +629,7 @@ def is_new_elective(c: dict) -> bool:
     code = (c.get("code") or "").upper()
     if code and code in KNOWN_ELECTIVE_CODES:
         return False
-    if not code and c.get("short") in ("dl", "ds", "se", "wp", "nl", "ml"):
+    if not code and c.get("short") in ("dl", "ds", "se", "wp", "bi", "nl", "ml"):
         return False
     return True
 
